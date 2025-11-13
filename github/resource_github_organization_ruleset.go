@@ -85,7 +85,7 @@ func resourceGithubOrganizationRuleset() *schema.Resource {
 				Type:        schema.TypeList,
 				Optional:    true,
 				MaxItems:    1,
-				Description: "Parameters for an organization ruleset condition. `ref_name` is required alongside one of `repository_name` or `repository_id`.",
+				Description: "Parameters for an organization ruleset condition. `ref_name` is required alongside one of `repository_name`, `repository_id`, or `repository_property`.",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"ref_name": {
@@ -117,8 +117,8 @@ func resourceGithubOrganizationRuleset() *schema.Resource {
 							Type:         schema.TypeList,
 							Optional:     true,
 							MaxItems:     1,
-							ExactlyOneOf: []string{"conditions.0.repository_id"},
-							AtLeastOneOf: []string{"conditions.0.repository_id"},
+							ExactlyOneOf: []string{"conditions.0.repository_id", "conditions.0.repository_property"},
+							AtLeastOneOf: []string{"conditions.0.repository_id", "conditions.0.repository_property"},
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"include": {
@@ -152,6 +152,74 @@ func resourceGithubOrganizationRuleset() *schema.Resource {
 							Description: "The repository IDs that the ruleset applies to. One of these IDs must match for the condition to pass.",
 							Elem: &schema.Schema{
 								Type: schema.TypeInt,
+							},
+						},
+						"repository_property": {
+							Type:         schema.TypeList,
+							Optional:     true,
+							MaxItems:     1,
+							ExactlyOneOf: []string{"conditions.0.repository_name", "conditions.0.repository_id"},
+							AtLeastOneOf: []string{"conditions.0.repository_name", "conditions.0.repository_id"},
+							Description:  "Filter repositories by custom properties. One of `repository_name`, `repository_id`, or `repository_property` must be specified.",
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"include": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: "Array of repository property conditions to include. Repositories matching any include condition will be targeted.",
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"name": {
+													Type:        schema.TypeString,
+													Required:    true,
+													Description: "The name of the custom property to match.",
+												},
+												"property_values": {
+													Type:        schema.TypeList,
+													Required:    true,
+													MinItems:    1,
+													Description: "The values to match for this property.",
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"source": {
+													Type:        schema.TypeString,
+													Optional:    true,
+													Description: "The source of the property. Can be `custom` or `system`. Defaults to `custom`.",
+												},
+											},
+										},
+									},
+									"exclude": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: "Array of repository property conditions to exclude. Repositories matching any exclude condition will not be targeted.",
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"name": {
+													Type:        schema.TypeString,
+													Required:    true,
+													Description: "The name of the custom property to match.",
+												},
+												"property_values": {
+													Type:        schema.TypeList,
+													Required:    true,
+													MinItems:    1,
+													Description: "The values to match for this property.",
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"source": {
+													Type:        schema.TypeString,
+													Optional:    true,
+													Description: "The source of the property. Can be `custom` or `system`. Defaults to `custom`.",
+												},
+											},
+										},
+									},
+								},
 							},
 						},
 					},

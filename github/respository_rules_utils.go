@@ -161,6 +161,70 @@ func expandConditions(input []interface{}, org bool) *github.RulesetConditions {
 			}
 
 			rulesetConditions.RepositoryID = &github.RulesetRepositoryIDsConditionParameters{RepositoryIDs: repositoryIDs}
+		} else if v, ok := inputConditions["repository_property"].([]interface{}); ok && v != nil && len(v) != 0 {
+			inputRepositoryProperty := v[0].(map[string]interface{})
+
+			include := []github.RulesetRepositoryPropertyTargetParameters{}
+			exclude := []github.RulesetRepositoryPropertyTargetParameters{}
+
+			// Process include conditions
+			if includeList, ok := inputRepositoryProperty["include"].([]interface{}); ok && len(includeList) > 0 {
+				for _, prop := range includeList {
+					propMap := prop.(map[string]interface{})
+					param := github.RulesetRepositoryPropertyTargetParameters{
+						Name: propMap["name"].(string),
+					}
+
+					// Add property values
+					if values, ok := propMap["property_values"].([]interface{}); ok {
+						param.Values = make([]string, 0)
+						for _, val := range values {
+							if val != nil {
+								param.Values = append(param.Values, val.(string))
+							}
+						}
+					}
+
+					// Add optional source
+					if source, ok := propMap["source"].(string); ok && source != "" {
+						param.Source = &source
+					}
+
+					include = append(include, param)
+				}
+			}
+
+			// Process exclude conditions
+			if excludeList, ok := inputRepositoryProperty["exclude"].([]interface{}); ok && len(excludeList) > 0 {
+				for _, prop := range excludeList {
+					propMap := prop.(map[string]interface{})
+					param := github.RulesetRepositoryPropertyTargetParameters{
+						Name: propMap["name"].(string),
+					}
+
+					// Add property values
+					if values, ok := propMap["property_values"].([]interface{}); ok {
+						param.Values = make([]string, 0)
+						for _, val := range values {
+							if val != nil {
+								param.Values = append(param.Values, val.(string))
+							}
+						}
+					}
+
+					// Add optional source
+					if source, ok := propMap["source"].(string); ok && source != "" {
+						param.Source = &source
+					}
+
+					exclude = append(exclude, param)
+				}
+			}
+
+			rulesetConditions.RepositoryProperty = &github.RulesetRepositoryPropertyConditionParameters{
+				Include: include,
+				Exclude: exclude,
+			}
 		}
 	}
 
@@ -203,6 +267,44 @@ func flattenConditions(conditions *github.RulesetConditions, org bool) []interfa
 
 		if conditions.RepositoryID != nil {
 			conditionsMap["repository_id"] = conditions.RepositoryID.RepositoryIDs
+		}
+
+		if conditions.RepositoryProperty != nil {
+			repositoryPropertyMap := make(map[string]interface{})
+
+			// Flatten include
+			if len(conditions.RepositoryProperty.Include) > 0 {
+				includeSlice := make([]map[string]interface{}, 0)
+				for _, prop := range conditions.RepositoryProperty.Include {
+					propMap := map[string]interface{}{
+						"name":            prop.Name,
+						"property_values": prop.Values,
+					}
+					if prop.Source != nil && *prop.Source != "" {
+						propMap["source"] = *prop.Source
+					}
+					includeSlice = append(includeSlice, propMap)
+				}
+				repositoryPropertyMap["include"] = includeSlice
+			}
+
+			// Flatten exclude
+			if len(conditions.RepositoryProperty.Exclude) > 0 {
+				excludeSlice := make([]map[string]interface{}, 0)
+				for _, prop := range conditions.RepositoryProperty.Exclude {
+					propMap := map[string]interface{}{
+						"name":            prop.Name,
+						"property_values": prop.Values,
+					}
+					if prop.Source != nil && *prop.Source != "" {
+						propMap["source"] = *prop.Source
+					}
+					excludeSlice = append(excludeSlice, propMap)
+				}
+				repositoryPropertyMap["exclude"] = excludeSlice
+			}
+
+			conditionsMap["repository_property"] = []map[string]interface{}{repositoryPropertyMap}
 		}
 	}
 
