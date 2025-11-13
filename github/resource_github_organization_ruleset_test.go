@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-github/v67/github"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
@@ -575,6 +576,525 @@ func TestGithubOrganizationRulesets(t *testing.T) {
 
 	})
 
+}
+
+func TestOrganizationRulesetWithRepositoryProperty(t *testing.T) {
+	if isEnterprise != "true" {
+		t.Skip("Skipping because `ENTERPRISE_ACCOUNT` is not set or set to false")
+	}
+
+	if testEnterprise == "" {
+		t.Skip("Skipping because `ENTERPRISE_SLUG` is not set")
+	}
+
+	randomID := acctest.RandStringFromCharSet(5, acctest.CharSetAlphaNum)
+
+	t.Run("Creates organization ruleset with repository_property conditions", func(t *testing.T) {
+
+		config := fmt.Sprintf(`
+			resource "github_organization_ruleset" "test" {
+				name        = "test-repo-props-%s"
+				target      = "branch"
+				enforcement = "active"
+
+				conditions {
+					ref_name {
+						include = ["~DEFAULT_BRANCH"]
+						exclude = []
+					}
+
+					repository_property {
+						include {
+							name            = "environment"
+							property_values = ["production", "staging"]
+						}
+
+						include {
+							name            = "compliance"
+							property_values = ["high"]
+							source          = "custom"
+						}
+
+						exclude {
+							name            = "archived"
+							property_values = ["true"]
+						}
+					}
+				}
+
+				rules {
+					pull_request {
+						required_approving_review_count = 2
+					}
+				}
+			}
+		`, randomID)
+
+		check := resource.ComposeTestCheckFunc(
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"name",
+				fmt.Sprintf("test-repo-props-%s", randomID),
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"enforcement",
+				"active",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.include.0.name",
+				"environment",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.include.0.property_values.0",
+				"production",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.include.0.property_values.1",
+				"staging",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.include.1.name",
+				"compliance",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.include.1.property_values.0",
+				"high",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.include.1.source",
+				"custom",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.exclude.0.name",
+				"archived",
+			),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.exclude.0.property_values.0",
+				"true",
+			),
+		)
+
+		testCase := func(t *testing.T, mode string) {
+			resource.Test(t, resource.TestCase{
+				PreCheck:  func() { skipUnlessMode(t, mode) },
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
+					{
+						Config: config,
+						Check:  check,
+					},
+				},
+			})
+		}
+
+		t.Run("with an enterprise account", func(t *testing.T) {
+			testCase(t, enterprise)
+		})
+
+	})
+
+	t.Run("Updates organization ruleset repository_property without error", func(t *testing.T) {
+
+		config := fmt.Sprintf(`
+			resource "github_organization_ruleset" "test" {
+				name        = "test-repo-props-update-%s"
+				target      = "branch"
+				enforcement = "active"
+
+				conditions {
+					ref_name {
+						include = ["~DEFAULT_BRANCH"]
+						exclude = []
+					}
+
+					repository_property {
+						include {
+							name            = "environment"
+							property_values = ["production"]
+						}
+					}
+				}
+
+				rules {
+					creation = true
+				}
+			}
+		`, randomID)
+
+		configUpdated := fmt.Sprintf(`
+			resource "github_organization_ruleset" "test" {
+				name        = "test-repo-props-update-%s"
+				target      = "branch"
+				enforcement = "active"
+
+				conditions {
+					ref_name {
+						include = ["~DEFAULT_BRANCH"]
+						exclude = []
+					}
+
+					repository_property {
+						include {
+							name            = "environment"
+							property_values = ["production", "staging"]
+						}
+
+						exclude {
+							name            = "deprecated"
+							property_values = ["true"]
+						}
+					}
+				}
+
+				rules {
+					creation = true
+				}
+			}
+		`, randomID)
+
+		checks := map[string]resource.TestCheckFunc{
+			"before": resource.ComposeTestCheckFunc(
+				resource.TestCheckResourceAttr(
+					"github_organization_ruleset.test",
+					"conditions.0.repository_property.0.include.0.property_values.#",
+					"1",
+				),
+			),
+			"after": resource.ComposeTestCheckFunc(
+				resource.TestCheckResourceAttr(
+					"github_organization_ruleset.test",
+					"conditions.0.repository_property.0.include.0.property_values.#",
+					"2",
+				),
+				resource.TestCheckResourceAttr(
+					"github_organization_ruleset.test",
+					"conditions.0.repository_property.0.exclude.0.name",
+					"deprecated",
+				),
+			),
+		}
+
+		testCase := func(t *testing.T, mode string) {
+			resource.Test(t, resource.TestCase{
+				PreCheck:  func() { skipUnlessMode(t, mode) },
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
+					{
+						Config: config,
+						Check:  checks["before"],
+					},
+					{
+						Config: configUpdated,
+						Check:  checks["after"],
+					},
+				},
+			})
+		}
+
+		t.Run("with an enterprise account", func(t *testing.T) {
+			testCase(t, enterprise)
+		})
+
+	})
+
+	t.Run("Imports organization ruleset with repository_property without error", func(t *testing.T) {
+
+		config := fmt.Sprintf(`
+			resource "github_organization_ruleset" "test" {
+				name        = "test-repo-props-import-%s"
+				target      = "branch"
+				enforcement = "active"
+
+				conditions {
+					ref_name {
+						include = ["~DEFAULT_BRANCH"]
+						exclude = []
+					}
+
+					repository_property {
+						include {
+							name            = "tier"
+							property_values = ["premium"]
+						}
+					}
+				}
+
+				rules {
+					creation = true
+				}
+			}
+		`, randomID)
+
+		check := resource.ComposeTestCheckFunc(
+			resource.TestCheckResourceAttrSet("github_organization_ruleset.test", "name"),
+			resource.TestCheckResourceAttr(
+				"github_organization_ruleset.test",
+				"conditions.0.repository_property.0.include.0.name",
+				"tier",
+			),
+		)
+
+		testCase := func(t *testing.T, mode string) {
+			resource.Test(t, resource.TestCase{
+				PreCheck:  func() { skipUnlessMode(t, mode) },
+				Providers: testAccProviders,
+				Steps: []resource.TestStep{
+					{
+						Config: config,
+						Check:  check,
+					},
+					{
+						ResourceName:      "github_organization_ruleset.test",
+						ImportState:       true,
+						ImportStateVerify: true,
+					},
+				},
+			})
+		}
+
+		t.Run("with an enterprise account", func(t *testing.T) {
+			testCase(t, enterprise)
+		})
+
+	})
+}
+
+func TestExpandFlattenRepositoryPropertyConditions(t *testing.T) {
+	// Unit test for repository_property expand/flatten functionality
+
+	t.Run("expands repository property conditions correctly", func(t *testing.T) {
+		conditionsMap := map[string]interface{}{
+			"ref_name": []interface{}{
+				map[string]interface{}{
+					"include": []interface{}{"~DEFAULT_BRANCH"},
+					"exclude": []interface{}{},
+				},
+			},
+			"repository_property": []interface{}{
+				map[string]interface{}{
+					"include": []interface{}{
+						map[string]interface{}{
+							"name":            "environment",
+							"property_values": []interface{}{"production", "staging"},
+						},
+						map[string]interface{}{
+							"name":            "compliance",
+							"property_values": []interface{}{"high"},
+							"source":          "custom",
+						},
+					},
+					"exclude": []interface{}{
+						map[string]interface{}{
+							"name":            "archived",
+							"property_values": []interface{}{"true"},
+						},
+					},
+				},
+			},
+		}
+
+		input := []interface{}{conditionsMap}
+
+		// Test expand functionality (organization rulesets use org=true)
+		expandedConditions := expandConditions(input, true)
+
+		if expandedConditions == nil {
+			t.Fatal("Expected expanded conditions, got nil")
+		}
+
+		if expandedConditions.RepositoryProperty == nil {
+			t.Fatal("Expected repository_property to be expanded, got nil")
+		}
+
+		// Verify include conditions
+		if len(expandedConditions.RepositoryProperty.Include) != 2 {
+			t.Fatalf("Expected 2 include conditions, got %d", len(expandedConditions.RepositoryProperty.Include))
+		}
+
+		// Check first include condition
+		firstInclude := expandedConditions.RepositoryProperty.Include[0]
+		if firstInclude.Name != "environment" {
+			t.Errorf("Expected first include name to be 'environment', got '%s'", firstInclude.Name)
+		}
+		if len(firstInclude.Values) != 2 {
+			t.Errorf("Expected 2 property values in first include, got %d", len(firstInclude.Values))
+		}
+		if firstInclude.Values[0] != "production" || firstInclude.Values[1] != "staging" {
+			t.Errorf("Expected property values ['production', 'staging'], got %v", firstInclude.Values)
+		}
+
+		// Check second include condition
+		secondInclude := expandedConditions.RepositoryProperty.Include[1]
+		if secondInclude.Name != "compliance" {
+			t.Errorf("Expected second include name to be 'compliance', got '%s'", secondInclude.Name)
+		}
+		if secondInclude.Source == nil || *secondInclude.Source != "custom" {
+			t.Errorf("Expected source to be 'custom', got %v", secondInclude.Source)
+		}
+
+		// Verify exclude conditions
+		if len(expandedConditions.RepositoryProperty.Exclude) != 1 {
+			t.Fatalf("Expected 1 exclude condition, got %d", len(expandedConditions.RepositoryProperty.Exclude))
+		}
+
+		firstExclude := expandedConditions.RepositoryProperty.Exclude[0]
+		if firstExclude.Name != "archived" {
+			t.Errorf("Expected exclude name to be 'archived', got '%s'", firstExclude.Name)
+		}
+	})
+
+	t.Run("flattens repository property conditions correctly", func(t *testing.T) {
+		// Create test data using the github library structs
+		source := "custom"
+		conditions := &github.RulesetConditions{
+			RefName: &github.RulesetRefConditionParameters{
+				Include: []string{"~DEFAULT_BRANCH"},
+				Exclude: []string{},
+			},
+			RepositoryProperty: &github.RulesetRepositoryPropertyConditionParameters{
+				Include: []github.RulesetRepositoryPropertyTargetParameters{
+					{
+						Name:   "environment",
+						Values: []string{"production", "staging"},
+					},
+					{
+						Name:   "compliance",
+						Values: []string{"high"},
+						Source: &source,
+					},
+				},
+				Exclude: []github.RulesetRepositoryPropertyTargetParameters{
+					{
+						Name:   "archived",
+						Values: []string{"true"},
+					},
+				},
+			},
+		}
+
+		// Test flatten functionality (organization rulesets use org=true)
+		flattenedResult := flattenConditions(conditions, true)
+
+		if len(flattenedResult) != 1 {
+			t.Fatalf("Expected 1 flattened result, got %d", len(flattenedResult))
+		}
+
+		flattenedConditionsMap := flattenedResult[0].(map[string]interface{})
+
+		// Verify repository_property exists
+		repositoryPropertySlice, ok := flattenedConditionsMap["repository_property"].([]map[string]interface{})
+		if !ok {
+			t.Fatal("Expected repository_property to be present in flattened conditions")
+		}
+		if len(repositoryPropertySlice) != 1 {
+			t.Fatalf("Expected 1 repository_property block, got %d", len(repositoryPropertySlice))
+		}
+
+		repositoryProperty := repositoryPropertySlice[0]
+
+		// Verify include conditions
+		includeSlice, ok := repositoryProperty["include"].([]map[string]interface{})
+		if !ok {
+			t.Fatal("Expected include to be present")
+		}
+		if len(includeSlice) != 2 {
+			t.Fatalf("Expected 2 include conditions, got %d", len(includeSlice))
+		}
+
+		// Check first include
+		if includeSlice[0]["name"] != "environment" {
+			t.Errorf("Expected first include name to be 'environment', got '%v'", includeSlice[0]["name"])
+		}
+		propertyValues := includeSlice[0]["property_values"].([]string)
+		if len(propertyValues) != 2 {
+			t.Errorf("Expected 2 property values, got %d", len(propertyValues))
+		}
+
+		// Check second include with source
+		if includeSlice[1]["name"] != "compliance" {
+			t.Errorf("Expected second include name to be 'compliance', got '%v'", includeSlice[1]["name"])
+		}
+		if includeSlice[1]["source"] != "custom" {
+			t.Errorf("Expected source to be 'custom', got '%v'", includeSlice[1]["source"])
+		}
+
+		// Verify exclude conditions
+		excludeSlice, ok := repositoryProperty["exclude"].([]map[string]interface{})
+		if !ok {
+			t.Fatal("Expected exclude to be present")
+		}
+		if len(excludeSlice) != 1 {
+			t.Fatalf("Expected 1 exclude condition, got %d", len(excludeSlice))
+		}
+		if excludeSlice[0]["name"] != "archived" {
+			t.Errorf("Expected exclude name to be 'archived', got '%v'", excludeSlice[0]["name"])
+		}
+	})
+
+	t.Run("round-trip test for repository property conditions", func(t *testing.T) {
+		// Test that expand -> flatten returns the same data
+		originalMap := map[string]interface{}{
+			"ref_name": []interface{}{
+				map[string]interface{}{
+					"include": []interface{}{"~DEFAULT_BRANCH"},
+					"exclude": []interface{}{},
+				},
+			},
+			"repository_property": []interface{}{
+				map[string]interface{}{
+					"include": []interface{}{
+						map[string]interface{}{
+							"name":            "tier",
+							"property_values": []interface{}{"premium", "enterprise"},
+							"source":          "custom",
+						},
+					},
+					"exclude": []interface{}{
+						map[string]interface{}{
+							"name":            "status",
+							"property_values": []interface{}{"inactive"},
+						},
+					},
+				},
+			},
+		}
+
+		input := []interface{}{originalMap}
+
+		// Expand then flatten
+		expanded := expandConditions(input, true)
+		flattened := flattenConditions(expanded, true)
+
+		if len(flattened) != 1 {
+			t.Fatalf("Expected 1 flattened result after round-trip, got %d", len(flattened))
+		}
+
+		flattenedMap := flattened[0].(map[string]interface{})
+		repoPropertySlice := flattenedMap["repository_property"].([]map[string]interface{})
+		repoProperty := repoPropertySlice[0]
+
+		includeSlice := repoProperty["include"].([]map[string]interface{})
+		if includeSlice[0]["name"] != "tier" {
+			t.Errorf("Round-trip failed: expected name 'tier', got '%v'", includeSlice[0]["name"])
+		}
+		if includeSlice[0]["source"] != "custom" {
+			t.Errorf("Round-trip failed: expected source 'custom', got '%v'", includeSlice[0]["source"])
+		}
+
+		propertyValues := includeSlice[0]["property_values"].([]string)
+		if len(propertyValues) != 2 || propertyValues[0] != "premium" || propertyValues[1] != "enterprise" {
+			t.Errorf("Round-trip failed: property values mismatch, got %v", propertyValues)
+		}
+	})
 }
 
 func TestOrganizationPushRulesetSupport(t *testing.T) {
