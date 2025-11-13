@@ -55,7 +55,7 @@ jobs:
           SPACELIFT_API_KEY_ID: ${{ secrets.SPACELIFT_API_KEY_ID }}
           SPACELIFT_API_KEY_SECRET: ${{ secrets.SPACELIFT_API_KEY_SECRET }}
         run:
-          spacectl provider create-version --type=ktl-github
+          spacectl provider create-version --type=ktlgithub
       
       - name: Publish provider
         if: startsWith(github.ref, 'refs/tags/')
@@ -65,7 +65,7 @@ jobs:
           SPACELIFT_API_KEY_ID: ${{ secrets.SPACELIFT_API_KEY_ID }}
           SPACELIFT_API_KEY_SECRET: ${{ secrets.SPACELIFT_API_KEY_SECRET }}
         run: |
-          spacectl provider list-versions --type ktl-github -o json > versions.json
+          spacectl provider list-versions --type ktlgithub -o json > versions.json
           VERSION_NUMBER=${{ github.ref_name }}
           VERSION_ID=$(jq -r --arg version "${VERSION_NUMBER#v}" '.versions[] | select(.number == $version) | .id' versions.json)
           echo "Publishing ID: $VERSION_ID"
